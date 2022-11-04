@@ -3,6 +3,7 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone)]
 struct Stat {
     time_to_connect: Duration,
     time_to_first_byte: Duration,
@@ -11,7 +12,12 @@ struct Stat {
     body_size: usize,
 }
 
-async fn fetch_video(url: &str, pb: &ProgressBar) -> anyhow::Result<Stat> {
+#[derive(Debug, Clone)]
+struct Context {
+    pb: ProgressBar,
+}
+
+async fn fetch_video(url: &str, ctx: &Context) -> anyhow::Result<Stat> {
     let now = Instant::now();
 
     let res = reqwest::get(url).await?;
@@ -28,7 +34,7 @@ async fn fetch_video(url: &str, pb: &ProgressBar) -> anyhow::Result<Stat> {
 
     while let Some(chunk) = res.chunk().await? {
         // println!("Chunk: {}", chunk.len());
-        pb.inc(chunk.len() as u64);
+        ctx.pb.inc(chunk.len() as u64);
         body_size += chunk.len();
     }
 
@@ -59,11 +65,11 @@ async fn fetch_video(url: &str, pb: &ProgressBar) -> anyhow::Result<Stat> {
 async fn client(
     _client_id: usize,
     num_reqs: usize,
-    pb: ProgressBar,
+    ctx: Context,
     url: String,
 ) -> anyhow::Result<()> {
     for _req_no in 0..num_reqs {
-        let _ = fetch_video(&url, &pb).await?;
+        let _ = fetch_video(&url, &ctx).await?;
     }
     Ok(())
 }
@@ -97,13 +103,15 @@ async fn main() -> anyhow::Result<()> {
           .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
+    let ctx = Context { pb };
+
     let clients: Vec<_> = (0..opts.clients)
         .into_iter()
         .map(|client_id: usize| {
-            let pb = pb.clone();
+            let ctx = ctx.clone();
             let url = opts.url.clone();
             tokio::task::spawn(async move {
-                client(client_id, reqs_per_client, pb, url).await
+                client(client_id, reqs_per_client, ctx, url).await
             })
         })
         .collect();
