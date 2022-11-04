@@ -73,6 +73,7 @@ struct Benchmark {
 
 #[derive(Debug)]
 struct BenchmarkResult {
+    started: std::time::SystemTime,
     total_runtime: Duration,
     client_results: Vec<Vec<Stat>>,
     reqs_per_client: usize,
@@ -151,6 +152,11 @@ impl BenchmarkResult {
             .collect();
 
         // TODO: per_client statistics
+        //
+        let started: time::OffsetDateTime = self.started.into();
+        let started = started
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
 
         serde_json::json!({
             "total_runtime": self.total_runtime.as_secs_f64(),
@@ -163,12 +169,14 @@ impl BenchmarkResult {
             "throughput_in_mib": total_size as f64 / self.total_runtime.as_secs_f64() / (1024.0 * 1024.0),
             "time_to_first_byte": all_time_to_first_byte,
             "time_to_completion": all_time_to_completion,
+            "started": started,
         })
     }
 }
 
 impl Benchmark {
     async fn run(&self, ctx: Ctx) -> anyhow::Result<BenchmarkResult> {
+        let started = std::time::SystemTime::now();
         let now = Instant::now();
 
         let clients: Vec<_> = (0..self.num_clients)
@@ -192,6 +200,7 @@ impl Benchmark {
         let total_runtime = now.elapsed();
 
         Ok(BenchmarkResult {
+            started,
             client_results,
             total_runtime,
             reqs_per_client: self.reqs_per_client,
