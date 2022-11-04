@@ -1,32 +1,59 @@
 use argh::FromArgs;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::Write;
+use std::time::{Duration, Instant};
 
-async fn fetch_video(url: &str, pb: &ProgressBar) -> anyhow::Result<usize> {
+struct Stat {
+    time_to_connect: Duration,
+    time_to_first_byte: Duration,
+    time_to_last_byte: Duration,
+    time_to_completion: Duration,
+    body_size: usize,
+}
+
+async fn fetch_video(url: &str, pb: &ProgressBar) -> anyhow::Result<Stat> {
+    let now = Instant::now();
+
     let res = reqwest::get(url).await?;
 
-    // println!("Response: {:?}", res);
+    let time_to_connect = now.elapsed(); // XXX
 
     let mut res = res.error_for_status()?;
 
     let content_length = res.content_length();
 
-    let mut total_size: usize = 0;
+    let time_to_first_byte = now.elapsed();
+
+    let mut body_size: usize = 0;
 
     while let Some(chunk) = res.chunk().await? {
         // println!("Chunk: {}", chunk.len());
         pb.inc(chunk.len() as u64);
-        total_size += chunk.len();
+        body_size += chunk.len();
     }
 
-    match (content_length, total_size) {
+    let time_to_last_byte = now.elapsed();
+
+    match (content_length, body_size) {
         (Some(len), total) if len as usize == total => {}
         _ => {
             println!("Length-mismatch or unknown content-length");
         }
     }
 
-    Ok(total_size)
+    drop(res);
+
+    let time_to_completion = now.elapsed();
+
+    let stat = Stat {
+        time_to_connect,
+        time_to_first_byte,
+        time_to_last_byte,
+        time_to_completion,
+        body_size,
+    };
+
+    Ok(stat)
 }
 
 async fn client(
