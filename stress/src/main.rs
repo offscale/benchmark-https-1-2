@@ -110,9 +110,8 @@ async fn main() -> anyhow::Result<()> {
     let reqs_per_client = opts.requests / opts.clients;
 
     let pb = ProgressBar::new(opts.requests as u64);
-    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}")
         .unwrap()
-          .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
     let ctx = Ctx { pb };
