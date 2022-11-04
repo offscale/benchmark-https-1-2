@@ -1,7 +1,15 @@
+use anyhow::Context;
 use argh::FromArgs;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::Write;
 use std::time::{Duration, Instant};
+use url::Url;
+
+use hyper::body::HttpBody;
+use hyper::http::{Request, StatusCode};
+use hyper::{client::conn, Body};
+use std::time::SystemTime;
+use tokio::net::TcpStream;
 
 #[derive(Debug, Clone)]
 struct Stat {
@@ -13,41 +21,77 @@ struct Stat {
 }
 
 #[derive(Debug, Clone)]
-struct Context {
+struct Ctx {
     pb: ProgressBar,
 }
 
-async fn fetch_video(url: &str, ctx: &Context) -> anyhow::Result<Stat> {
+async fn fetch_video(url: &Url, ctx: &Ctx) -> anyhow::Result<Stat> {
     let now = Instant::now();
 
-    let res = reqwest::get(url).await?;
+    let host = url.host_str().context("host")?;
+    let port = url.port_or_known_default().context("port")?;
+    let connstr = format!("{host}:{port}");
 
-    let time_to_connect = now.elapsed(); // XXX
+    dbg!(&connstr);
 
-    let mut res = res.error_for_status()?;
+    let target_stream = TcpStream::connect(&connstr).await?;
 
-    let content_length = res.content_length();
+    let (mut request_sender, connection) =
+        conn::handshake(target_stream).await?;
 
-    let time_to_first_byte = now.elapsed();
+    // spawn a task to poll the connection and drive the HTTP state
+    // XXX: get rid of task
+    let conn_handler = tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("Error in connection: {}", e);
+        }
+    });
+
+    let time_to_connect = now.elapsed();
+
+    let date: time::OffsetDateTime = SystemTime::now().into();
+    let date = date.format(&time::format_description::well_known::Rfc2822)?;
+
+    dbg!(&date);
+
+    let request = Request::builder()
+        .method("GET")
+        .header("User-Agent", "blah/1.0")
+        .header("Host", host)
+        .header(hyper::header::DATE, date)
+        .uri(url.path())
+        .body(Body::from(""))?;
+
+    dbg!(&request);
+
+    let response = request_sender.send_request(request).await?;
+
+    if response.status() != StatusCode::OK {
+        anyhow::bail!("Invalid StatusCode: {:?}", response.status());
+    }
+
+    let mut body: Body = response.into_body();
 
     let mut body_size: usize = 0;
 
-    while let Some(chunk) = res.chunk().await? {
-        // println!("Chunk: {}", chunk.len());
-        ctx.pb.inc(chunk.len() as u64);
-        body_size += chunk.len();
+    if let Some(buf) = body.data().await {
+        let buf = buf?;
+        body_size += buf.len();
+        ctx.pb.inc(buf.len() as u64);
+    }
+
+    let time_to_first_byte = now.elapsed();
+
+    while let Some(buf) = body.data().await {
+        let buf = buf?;
+        body_size += buf.len();
+        ctx.pb.inc(buf.len() as u64);
     }
 
     let time_to_last_byte = now.elapsed();
 
-    match (content_length, body_size) {
-        (Some(len), total) if len as usize == total => {}
-        _ => {
-            println!("Length-mismatch or unknown content-length");
-        }
-    }
-
-    drop(res);
+    drop(request_sender);
+    conn_handler.await?;
 
     let time_to_completion = now.elapsed();
 
@@ -65,11 +109,16 @@ async fn fetch_video(url: &str, ctx: &Context) -> anyhow::Result<Stat> {
 async fn client(
     _client_id: usize,
     num_reqs: usize,
-    ctx: Context,
-    url: String,
+    ctx: Ctx,
+    url: Url,
 ) -> anyhow::Result<()> {
     for _req_no in 0..num_reqs {
-        let _ = fetch_video(&url, &ctx).await?;
+        match fetch_video(&url, &ctx).await {
+            Ok(_stat) => {}
+            Err(err) => {
+                eprintln!("ERR: {err:?}");
+            }
+        }
     }
     Ok(())
 }
@@ -87,7 +136,7 @@ struct Options {
 
     /// URL to fetch
     #[argh(positional)]
-    url: String,
+    url: Url,
 }
 
 #[tokio::main]
@@ -103,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
           .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let ctx = Context { pb };
+    let ctx = Ctx { pb };
 
     let clients: Vec<_> = (0..opts.clients)
         .into_iter()
