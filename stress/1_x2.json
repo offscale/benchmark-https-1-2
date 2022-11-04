@@ -1,0 +1,1 @@
+{"failed_requests":0,"num_clients":1,"reqs_per_client":2,"started":"2022-11-04T19:47:28.268442174Z","successful_requests":2,"throughput_in_mib":32.837036184039924,"time_to_completion":[0.129362183,0.022809778],"time_to_first_byte":[0.051099519,0.011345538],"total_requests":2,"total_runtime":0.160977445,"total_size":5542796}
