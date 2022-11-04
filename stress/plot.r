@@ -1,7 +1,9 @@
 xs <- list(1, 2, 5, 10)
 
+data <- read.csv("data.csv", header=TRUE)
+
 for (x in xs) {
-	data1 <- read.csv(sprintf("data_x%s.csv", x), header=TRUE)
+	data1 = subset(data, data$x == x)
 
 	png(file = sprintf("ttfb_x%s.png", x))
 	boxplot(ttfb ~ clients, data = data1, xlab = "# Clients",
@@ -14,4 +16,3 @@ for (x in xs) {
 	dev.off()
 }
 
-# head(subset(data1, data1$clients == 50))

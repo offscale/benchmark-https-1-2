@@ -3,9 +3,11 @@ URL?="https://cdn.playable.video/samples.playable.video/v:4779304402550784/0/477
 benchmark:
 	sh run.sh
 
+plot:
+	ruby gendata.rb > data.csv
+	R --no-save < plot.r
+
 _benchmark:
 	cargo run --release -- -N 1 -C 1 ${URL} > 1_1.json
 
-plot:
-	ruby gendata.rb
-	R --no-save < plot.r
+

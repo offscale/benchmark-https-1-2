@@ -1,6 +1,6 @@
 require 'json'
 
-data = {}
+puts "x,clients,ttfb,ttc"
 
 Dir["*.json"].each {|f|
   json = JSON.load(File.read(f))
@@ -13,10 +13,7 @@ Dir["*.json"].each {|f|
     next
   end
 
-  (data[reqs_per_client] ||= []).push(*ttfb.zip(ttc).map {|a,b| [clients,a,b]})
+  ttfb.zip(ttc).each {|a,b|
+    puts [reqs_per_client,clients,a,b].join(",")
+  }
 }
-
-for reqs_per_client, items in data
-  File.write("data_x#{reqs_per_client}.csv", "clients,ttfb,ttc\n" + 
-  items.map{|i| i.join(',')}.join("\n") + "\n")
-end
