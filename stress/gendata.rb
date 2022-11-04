@@ -2,7 +2,7 @@ require 'json'
 
 puts "x,clients,ttfb,ttc"
 
-Dir["*.json"].each {|f|
+Dir["run_*.json"].each {|f|
   json = JSON.load(File.read(f))
   begin
     clients = json['num_clients']

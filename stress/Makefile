@@ -3,6 +3,11 @@ URL?="https://cdn.playable.video/samples.playable.video/v:4779304402550784/0/477
 benchmark:
 	sh run.sh
 
+stress200:
+	# ~ 1 second per download. So let's run this for 4000 seconds :)
+	echo "Running a stress test with continuous 200 clients"
+	cargo run --release -- -N 800000 -C 200 ${URL} > stress_200_x4000.json
+
 plot:
 	ruby gendata.rb > data.csv
 	R --no-save < plot.r
