@@ -1,60 +1,63 @@
 use argh::FromArgs;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use reqwest::Client;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
+use url::Url;
 
 #[derive(Debug, Clone)]
 struct Stat {
-    time_to_connect: Duration,
     time_to_first_byte: Duration,
-    time_to_last_byte: Duration,
     time_to_completion: Duration,
     body_size: usize,
 }
 
 #[derive(Debug, Clone)]
-struct Context {
+struct Ctx {
     pb: ProgressBar,
 }
 
-async fn fetch_video(url: &str, ctx: &Context) -> anyhow::Result<Stat> {
+impl Ctx {
+    fn report_download_progress(&self, len: usize) {
+        self.pb.inc(len as u64);
+    }
+}
+
+async fn fetch_video(
+    url: &Url,
+    client: Client,
+    ctx: &Ctx,
+) -> anyhow::Result<Stat> {
     let now = Instant::now();
 
-    let res = reqwest::get(url).await?;
+    let resp = client.get(url.clone()).send().await?;
 
-    let time_to_connect = now.elapsed(); // XXX
+    let mut resp = resp.error_for_status()?;
 
-    let mut res = res.error_for_status()?;
-
-    let content_length = res.content_length();
+    let content_length = resp.content_length();
 
     let time_to_first_byte = now.elapsed();
 
     let mut body_size: usize = 0;
 
-    while let Some(chunk) = res.chunk().await? {
-        // println!("Chunk: {}", chunk.len());
-        ctx.pb.inc(chunk.len() as u64);
+    while let Some(chunk) = resp.chunk().await? {
+        ctx.report_download_progress(chunk.len());
         body_size += chunk.len();
     }
-
-    let time_to_last_byte = now.elapsed();
 
     match (content_length, body_size) {
         (Some(len), total) if len as usize == total => {}
         _ => {
-            println!("Length-mismatch or unknown content-length");
+            eprintln!("Length-mismatch or unknown content-length");
         }
     }
 
-    drop(res);
+    drop(resp);
 
     let time_to_completion = now.elapsed();
 
     let stat = Stat {
-        time_to_connect,
         time_to_first_byte,
-        time_to_last_byte,
         time_to_completion,
         body_size,
     };
@@ -65,11 +68,20 @@ async fn fetch_video(url: &str, ctx: &Context) -> anyhow::Result<Stat> {
 async fn client(
     _client_id: usize,
     num_reqs: usize,
-    ctx: Context,
-    url: String,
+    ctx: Ctx,
+    url: Url,
 ) -> anyhow::Result<()> {
+    let client = Client::builder().build()?;
+
     for _req_no in 0..num_reqs {
-        let _ = fetch_video(&url, &ctx).await?;
+        match fetch_video(&url, client.clone(), &ctx).await {
+            Ok(stat) => {
+                dbg!(stat);
+            }
+            Err(err) => {
+                eprintln!("ERR: {err:?}");
+            }
+        }
     }
     Ok(())
 }
@@ -87,7 +99,7 @@ struct Options {
 
     /// URL to fetch
     #[argh(positional)]
-    url: String,
+    url: Url,
 }
 
 #[tokio::main]
@@ -103,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
           .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let ctx = Context { pb };
+    let ctx = Ctx { pb };
 
     let clients: Vec<_> = (0..opts.clients)
         .into_iter()

@@ -9,3 +9,4 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 indicatif = "0.17"
 argh = "0.1.9"
+url = "2.3.1"
