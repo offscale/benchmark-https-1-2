@@ -4,6 +4,53 @@ benchmark-https-1-2
 
 Tooling to benchmark HTTPS (TLS 1.2) requests.
 
+
+In `stress/` you'll find a small Rust CLI application that will send HTTP GET
+requests concurrently, download the resource and report some statistics to
+stdout (as JSON).
+
+## Example usage
+
+```sh
+> cd stress
+> cargo build --release
+> ./target/release/stress -N 10 -C 2 https://www.ntecs.de/
+```
+
+This will build the `stress` binary and then start it. It will fetch the
+`https://www.ntecs.de/` resource using 2 concurrent clients (`-C 2`) in total
+10 times (`-N 10`). Each client will request the resouce 5 times.
+
+The output it generates looks like this (this is just an example):
+
+```json
+// jq < stress/results/run_1_x1.json
+{
+  "failed_requests": 0,
+  "num_clients": 1,
+  "reqs_per_client": 1,
+  "started": "2022-11-04T19:47:21.861164407Z",
+  "successful_requests": 1,
+  "throughput_in_mib": 5.401814642267866,
+  "time_to_completion": [
+    0.479767029
+  ],
+  "time_to_first_byte": [
+    0.397834181
+  ],
+  "total_requests": 1,
+  "total_runtime": 0.489282078,
+  "total_size": 2771398
+}
+```
+
+## Benchmark scripts
+
+In `stress/` you'll find a couple of benchmark scripts. `stress/gendata.rb`
+will take the JSON statistics and create `csv` files which are input to the R
+scripts `plot.r` and `plot_stress.r`. These are very primitive R scripts that
+generate diagrams.
+
 ---
 
 ## License
