@@ -7,6 +7,6 @@ for reqs_per_client in 1 2 5 10; do
 		./target/release/stress \
 			-N `expr ${clients} \* ${reqs_per_client}` \
 			-C ${clients} \
-			> ${clients}_x${reqs_per_client}.json ${URL} || exit 1
+			> results/${clients}_x${reqs_per_client}.json ${URL} || exit 1
 	done
 done

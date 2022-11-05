@@ -1,18 +1,18 @@
 xs <- list(1, 2, 5, 10)
 
-data <- read.csv("data.csv", header=TRUE)
+data <- read.csv("results/data.csv", header=TRUE)
+
+pdf(file = "results/run.pdf")
+par(mfrow = c(4, 2))
 
 for (x in xs) {
 	data1 = subset(data, data$x == x)
+	data1 = subset(data1, data$clients <= 200)
 
-	png(file = sprintf("ttfb_x%s.png", x))
 	boxplot(ttfb ~ clients, data = data1, xlab = "# Clients",
-	ylab = "Time to first byte", main = sprintf("Benchmark (%s)", x))
-	dev.off()
+	ylab = "Time to first byte [s]", main = sprintf("Reqs/client (%s)", x))
 
-	png(file = sprintf("ttc_x%s.png", x))
 	boxplot(ttc ~ clients, data = data1, xlab = "# Clients",
-	ylab = "Time to completion", main = sprintf("Benchmark (%s)", x))
-	dev.off()
+	ylab = "Time to completion [s]", main = sprintf("Reqs/client (%s)", x))
 }
-
+dev.off()
