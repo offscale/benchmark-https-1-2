@@ -49,21 +49,24 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let bm_res: BenchmarkResult = bm.run(ctx).await?;
+    let bm_res_dto = bm_res.encode()?;
 
-    println!("{}", serde_json::to_string(&bm_res.to_json())?);
+    println!("{}", serde_json::to_string(&bm_res_dto)?);
 
     Ok(())
 }
 
 #[derive(Debug, Clone)]
-enum Stat {
-    Complete {
-        time_to_first_byte: Duration,
-        time_to_completion: Duration,
-        body_size: usize,
-    },
-    Failed(String),
+struct Stat {
+    time_to_first_byte: Duration,
+    time_to_completion: Duration,
+    body_size: usize,
 }
+
+#[derive(Debug, Clone)]
+struct StatError(String);
+
+type StatResult = Result<Stat, StatError>;
 
 struct Benchmark {
     url: Url,
@@ -75,101 +78,77 @@ struct Benchmark {
 struct BenchmarkResult {
     started: std::time::SystemTime,
     total_runtime: Duration,
-    client_results: Vec<Vec<Stat>>,
+    client_results: Vec<Vec<StatResult>>,
     reqs_per_client: usize,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct BenchmarkResultDto {
+    total_runtime: f64,
+    num_clients: usize,
+    reqs_per_client: usize,
+    total_requests: usize,
+    successful_requests: usize,
+    failed_requests: usize,
+    total_size: usize,
+    throughput_in_mib: f64,
+    time_to_first_byte: Vec<f64>,
+    time_to_completion: Vec<f64>,
+    started: String,
+}
+
 impl BenchmarkResult {
-    fn to_json(self) -> serde_json::Value {
-        let num_clients = self.client_results.len();
-        let total_requests: usize =
-            self.client_results.iter().map(|r| r.len()).sum();
-        let successful_requests: usize = self
-            .client_results
-            .iter()
-            .map(|r| {
-                r.iter()
-                    .filter(|s| matches!(s, Stat::Complete { .. }))
-                    .count()
-            })
-            .sum();
-        let failed_requests: usize = self
-            .client_results
-            .iter()
-            .map(|r| {
-                r.iter().filter(|s| matches!(s, Stat::Failed(_))).count()
-            })
-            .sum();
-
-        let total_size: usize = self
-            .client_results
-            .iter()
-            .map(|r| {
-                r.iter()
-                    .filter_map(|s| {
-                        if let Stat::Complete { body_size, .. } = s {
-                            Some(body_size)
-                        } else {
-                            None
-                        }
-                    })
-                    .sum::<usize>()
-            })
-            .sum();
-
-        let all_stats: Vec<Stat> = self
+    fn encode(self) -> anyhow::Result<BenchmarkResultDto> {
+        // flatten nested vector
+        let results: Vec<StatResult> = self
             .client_results
             .iter()
             .flat_map(|r| r.iter().cloned())
             .collect();
 
-        let all_time_to_first_byte: Vec<_> = all_stats
+        let successful_requests: Vec<Stat> =
+            results.iter().filter_map(|r| r.clone().ok()).collect();
+        let failed_requests: Vec<StatError> = results
             .iter()
-            .filter_map(|s| {
-                if let Stat::Complete {
-                    time_to_first_byte, ..
-                } = s
-                {
-                    Some(time_to_first_byte.as_secs_f64())
-                } else {
-                    None
-                }
+            .filter_map(|r| match r {
+                Ok(_) => None,
+                Err(err) => Some(err.clone()),
             })
             .collect();
 
-        let all_time_to_completion: Vec<_> = all_stats
+        let total_size: usize =
+            successful_requests.iter().map(|r| r.body_size).sum();
+
+        let time_to_first_byte: Vec<_> = successful_requests
             .iter()
-            .filter_map(|s| {
-                if let Stat::Complete {
-                    time_to_completion, ..
-                } = s
-                {
-                    Some(time_to_completion.as_secs_f64())
-                } else {
-                    None
-                }
-            })
+            .map(|r| r.time_to_first_byte.as_secs_f64())
+            .collect();
+
+        let time_to_completion: Vec<_> = successful_requests
+            .iter()
+            .map(|r| r.time_to_completion.as_secs_f64())
             .collect();
 
         // TODO: per_client statistics
         //
         let started: time::OffsetDateTime = self.started.into();
-        let started = started
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap();
+        let started =
+            started.format(&time::format_description::well_known::Rfc3339)?;
 
-        serde_json::json!({
-            "total_runtime": self.total_runtime.as_secs_f64(),
-            "num_clients": num_clients,
-            "reqs_per_client": self.reqs_per_client,
-            "total_requests": total_requests,
-            "successful_requests": successful_requests,
-            "failed_requests": failed_requests,
-            "total_size": total_size,
-            "throughput_in_mib": total_size as f64 / self.total_runtime.as_secs_f64() / (1024.0 * 1024.0),
-            "time_to_first_byte": all_time_to_first_byte,
-            "time_to_completion": all_time_to_completion,
-            "started": started,
+        Ok(BenchmarkResultDto {
+            total_runtime: self.total_runtime.as_secs_f64(),
+            num_clients: self.client_results.len(),
+            reqs_per_client: self.reqs_per_client,
+            total_requests: results.len(),
+            successful_requests: successful_requests.len(),
+            failed_requests: failed_requests.len(),
+            total_size: total_size,
+            throughput_in_mib: total_size as f64
+                / self.total_runtime.as_secs_f64()
+                / (1024.0 * 1024.0),
+            time_to_first_byte: time_to_first_byte,
+            time_to_completion: time_to_completion,
+            started: started,
         })
     }
 }
@@ -212,20 +191,18 @@ async fn run_client(
     url: Url,
     reqs_per_client: usize,
     ctx: Ctx,
-) -> anyhow::Result<Vec<Stat>> {
+) -> anyhow::Result<Vec<StatResult>> {
     let client = Client::builder().build()?;
 
-    let mut results: Vec<Stat> = Vec::<Stat>::with_capacity(reqs_per_client);
+    let mut results = Vec::<StatResult>::with_capacity(reqs_per_client);
 
     for _req_no in 0..reqs_per_client {
-        let res = match fetch_video(&url, client.clone(), &ctx).await {
-            Ok(stat) => stat,
-            Err(err) => {
+        results.push(fetch_video(&url, client.clone(), &ctx).await.map_err(
+            |err| {
                 eprintln!("ERR: {err:?}");
-                Stat::Failed(format!("{err:?}"))
-            }
-        };
-        results.push(res);
+                StatError(format!("{err:?}"))
+            },
+        ));
     }
     Ok(results)
 }
@@ -263,7 +240,7 @@ async fn fetch_video(
 
     let time_to_completion = now.elapsed();
 
-    Ok(Stat::Complete {
+    Ok(Stat {
         time_to_first_byte,
         time_to_completion,
         body_size,
