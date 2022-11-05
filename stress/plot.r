@@ -1,9 +1,17 @@
+args<-commandArgs(TRUE)
+
 xs <- list(1, 2, 5, 10)
 
 data <- read.csv("results/data.csv", header=TRUE)
 
-pdf(file = "results/run.pdf")
-par(mfrow = c(4, 2))
+
+if (args == "onepage") {
+	pdf(file = "results/run.pdf")
+	par(mfrow = c(4, 2))
+} else {
+	pdf(file = "results/run_detailed.pdf")
+
+}
 
 for (x in xs) {
 	data1 = subset(data, data$x == x)
