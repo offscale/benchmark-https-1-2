@@ -8,9 +8,15 @@ stress200:
 	echo "Running a stress test with continuous 200 clients"
 	cargo run --release -- -N 800000 -C 200 ${URL} > stress_200_x4000.json
 
-plot:
-	ruby gendata.rb > data.csv
+plot: stress.png
+	ruby gendata.rb run_*.json > data.csv
 	R --no-save < plot.r
+
+data_stress.csv: stress_200_x4000.json gendata.rb
+	ruby gendata.rb stress_*.json > data_stress.csv
+
+stress.png: plot_stress.r data_stress.csv
+	R --no-save < plot_stress.r
 
 _benchmark:
 	cargo run --release -- -N 1 -C 1 ${URL} > 1_1.json
