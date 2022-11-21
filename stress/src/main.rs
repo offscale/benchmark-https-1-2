@@ -3,6 +3,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::time::{Duration, Instant};
 use url::Url;
+mod argh_cargo;
 
 #[derive(Debug, Clone)]
 struct Ctx {
@@ -29,16 +30,23 @@ struct Options {
     /// URL to fetch
     #[argh(positional)]
     url: Url,
+    /*/// print version information and exit
+    #[argh(switch)]
+    version: bool,*/
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let opts: Options = argh::from_env();
+    let opts: Options = argh_cargo::from_env();
 
     let pb = ProgressBar::new(opts.requests as u64);
-    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}")
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}",
+        )
         .unwrap()
-        .progress_chars("#>-"));
+        .progress_chars("#>-"),
+    );
 
     let ctx = Ctx { pb };
 
@@ -116,8 +124,7 @@ impl BenchmarkResult {
             })
             .collect();
 
-        let total_size: usize =
-            successful_requests.iter().map(|r| r.body_size).sum();
+        let total_size: usize = successful_requests.iter().map(|r| r.body_size).sum();
 
         let time_to_first_byte: Vec<_> = successful_requests
             .iter()
@@ -132,8 +139,7 @@ impl BenchmarkResult {
         // TODO: per_client statistics
         //
         let started: time::OffsetDateTime = self.started.into();
-        let started =
-            started.format(&time::format_description::well_known::Rfc3339)?;
+        let started = started.format(&time::format_description::well_known::Rfc3339)?;
 
         Ok(BenchmarkResultDto {
             total_runtime: self.total_runtime.as_secs_f64(),
@@ -164,9 +170,7 @@ impl Benchmark {
                 let ctx = ctx.clone();
                 let url = self.url.clone();
                 let reqs_per_client = self.reqs_per_client;
-                tokio::task::spawn(async move {
-                    run_client(url, reqs_per_client, ctx).await
-                })
+                tokio::task::spawn(async move { run_client(url, reqs_per_client, ctx).await })
             })
             .collect();
 
@@ -187,31 +191,25 @@ impl Benchmark {
     }
 }
 
-async fn run_client(
-    url: Url,
-    reqs_per_client: usize,
-    ctx: Ctx,
-) -> anyhow::Result<Vec<StatResult>> {
+async fn run_client(url: Url, reqs_per_client: usize, ctx: Ctx) -> anyhow::Result<Vec<StatResult>> {
     let client = Client::builder().build()?;
 
     let mut results = Vec::<StatResult>::with_capacity(reqs_per_client);
 
     for _req_no in 0..reqs_per_client {
-        results.push(fetch_video(&url, client.clone(), &ctx).await.map_err(
-            |err| {
-                eprintln!("ERR: {err:?}");
-                StatError(format!("{err:?}"))
-            },
-        ));
+        results.push(
+            fetch_video(&url, client.clone(), &ctx)
+                .await
+                .map_err(|err| {
+                    eprintln!("ERR: {err:?}");
+                    StatError(format!("{err:?}"))
+                }),
+        );
     }
     Ok(results)
 }
 
-async fn fetch_video(
-    url: &Url,
-    client: Client,
-    ctx: &Ctx,
-) -> anyhow::Result<Stat> {
+async fn fetch_video(url: &Url, client: Client, ctx: &Ctx) -> anyhow::Result<Stat> {
     let now = Instant::now();
 
     let resp = client.get(url.clone()).send().await?;

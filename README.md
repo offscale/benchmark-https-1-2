@@ -9,6 +9,26 @@ In `stress/` you'll find a small Rust CLI application that will send HTTP GET
 requests concurrently, download the resource and report some statistics to
 stdout (as JSON).
 
+## Help text
+```sh
+> cd stress && cargo run --release -- --help
+   Compiling stress v0.1.0 (benchmark-https-1-2/stress)
+    Finished release [optimized] target(s) in 4.76s
+     Running `target/release/stress --help`
+Usage: stress <url> -C <clients> -N <requests>
+
+HTTP benchmark
+
+Positional Arguments:
+  url               URL to fetch
+
+Options:
+  -C, --clients     number of clients
+  -N, --requests    number of total requests
+  --help            display usage information
+  -V, --version     print version information and exit
+```
+
 ## Example usage
 
 ```sh
